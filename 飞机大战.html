@@ -1,0 +1,745 @@
+<!DOCTYPE html>
+<html>
+
+	<head>
+		<meta charset="UTF-8">
+		<title>飞机大战</title>
+		<style type="text/css">
+			* {
+				margin: 0;
+				padding: 0;
+				list-style: none;
+				-webkit-user-select: none;
+				-moz-user-select: none;
+				-ms-user-select: none;
+				user-select: none;
+			}
+			
+			#box {
+				position: relative;
+			}
+			
+			#c1 {
+				display: block;
+			}
+			
+			#loading {
+				position: absolute;
+				left: 50%;
+				top: 50%;
+				transform: translate(-50%, -50%);
+				text-align: center;
+			}
+			
+			#score {
+				position: absolute;
+				left: 5px;
+				top: 5px;
+			}
+			
+			#menu {
+				position: absolute;
+				left: 50%;
+				top: 50%;
+				transform: translate(-50%, -50%);
+				background-color: darkgray;
+				width: 160px;
+				height: 180px;
+				border: 1px solid black;
+				text-align: center;
+				line-height: 40px;
+				border-radius: 5px;
+				display: none;
+			}
+			
+			#menu li {
+				line-height: 60px;
+			}
+			
+			#menu li:nth-child(2) {
+				border-top: 1px solid black;
+				border-bottom: 1px solid black;
+			}
+			
+			#menu li:nth-child(3) {
+				cursor: pointer;
+			}
+			
+			#m {
+				width: 25px;
+				position: fixed;
+				right: 20px;
+				bottom: 30px;
+				cursor: pointer;
+			}
+		</style>
+	</head>
+
+	<body>
+		<!--游戏区域-->
+		<div id="box">
+			<!--画布-->
+			<canvas id="c1" width="" height=""></canvas>
+			<!--加载进度-->
+			<div id="loading">
+				<img src="img/loading.gif" alt="" />
+				<p>游戏加载中...</p>
+			</div>
+			<!--左上角分数-->
+			<p id="score">分数：0</p>
+			<!--结束菜单-->
+			<ul id="menu">
+				<li>飞机大战分数</li>
+				<li id="mscore">0</li>
+				<li id="restart">重新开始</li>
+			</ul>
+		</div>
+		<img src="img/静音.png" id="m" />
+		<script type="text/javascript">
+			//获取canvas标签
+			var canvasE = document.getElementById("c1");
+			//动态设置canvas的大小
+			canvasE.width = window.innerWidth;
+			canvasE.height = window.innerHeight;
+			//获取画笔
+			var pen = canvasE.getContext("2d");
+
+			var gameScore = 0;
+			/*
+			 * 预加载
+			 * 图片：通过onload事件监听图片是否加载完毕
+			 
+			 */
+			var imagesName = ["background.png", "bullet1.png", "bullet2.png", "enemy1.png", "enemy2.png", "enemy3.png", "herofly.png", "prop.png"];
+			//计数器
+			var imgCount = 0;
+			//声明一个数组，存储所有的图片对象
+			var imgArr = [];
+			//循环创建img图片对象
+			for(var i = 0; i < imagesName.length; i++) {
+				var img = new Image();
+				img.src = "img/" + imagesName[i];
+				//存储图片对象
+				imgArr.push(img);
+				img.onload = function() {
+					imgCount++;
+					if(imgCount == imagesName.length && musicCount == musicsName.length) {
+						console.log("所有资源加载完毕！");
+						//开始游戏
+						loading.style.display = "none";
+						//播放背景音乐
+						//						musicArr[4].play();
+						musicArr[4].loop = true;
+						startGame();
+					}
+
+				}
+			}
+
+			//加载音频
+			var musicsName = ["bullet.mp3", "enemy1_down.mp3", "enemy2_down.mp3", "enemy3_down.mp3", "game_music.mp3", "game_over.mp3"];
+			//声明数组存储音频对象
+			var musicArr = [];
+
+			//计数器
+			var musicCount = 0;
+			for(var i = 0; i < musicsName.length; i++) {
+				var audio = new Audio();
+				audio.src = "audio/" + musicsName[i];
+				//让所有的音频对象初始化静音
+				audio.muted = true;
+				musicArr.push(audio);
+				audio.onloadedmetadata = function() {
+					musicCount++;
+					if(musicCount == musicsName.length && imgCount == imagesName.length) {
+						console.log("所有资源加载完毕！！！");
+						//开始游戏
+						loading.style.display = "none";
+						//播放背景音乐
+						//						musicArr[4].play();
+						musicArr[4].loop = true;
+						startGame();
+					}
+				}
+			}
+			//背景直接声明成一个对象
+			var bg = {
+				//位置
+				x: 0,
+				y: 0,
+				//大小
+				width: canvasE.width,
+				height: canvasE.height,
+				//绘制
+				draw: function() {
+					//保证背景铺满画布，不调整原背景图大小,原图尺寸：320*568
+					var row = Math.ceil(this.height / 568);
+					var col = Math.ceil(this.width / 320);
+					//绘制图片
+					for(var i = -row; i < row; i++) {
+						for(var j = 0; j < col; j++) {
+							pen.drawImage(imgArr[0], j * 320, i * 568 + this.y);
+
+						}
+					}
+				},
+				move: function() {
+					this.y++;
+					if(this.y >= 568) {
+						this.y = 0;
+					}
+				}
+			};
+
+			//英雄直接生成一个对象
+			var hero = {
+				//位置
+				x: canvasE.width / 2 - 33,
+				y: canvasE.height - 82 - 100,
+				//大小
+				width: 66,
+				height: 82,
+				//记录当前应该绘制第几张图
+				i: 0,
+				//存储子弹
+				bullets: [],
+				//子弹类型  0--单排  1--双排
+				bulletsType: 0,
+				//记录英雄是否 爆炸
+				isBoom: false,
+				//控制换图的频率
+				flagI: 0,
+				//控制子弹的频率
+				flagShot: 0,
+				//记录英雄是否死亡
+				isDie: false,
+				//绘制英雄
+				draw: function() {
+					this.flagI++;
+					if(this.flagI == 10) {
+						if(this.isBoom == true) {
+							this.i++;
+							if(this.i >= 4) {
+								//游戏结束
+								//alert("游戏结束!");
+								this.isDie = true;
+								//游戏结束声音
+								//								musicArr[5].muted=false;
+								musicArr[5].play();
+								//停止背景音乐
+								musicArr[4].pause();
+								//修改提示图标
+								m.src = "img/静音.png";
+								//修改总分
+								mscore.innerHTML = gameScore;
+								//显示结束菜单
+								menu.style.display = "block";
+							}
+						} else {
+							//切换第一张图和第二张图
+							this.i = ++this.i % 2;
+						}
+
+						this.flagI = 0;
+					}
+
+					pen.drawImage(imgArr[6], this.i * this.width, 0, this.width, this.height, this.x, this.y, this.width, this.height);
+				},
+				//发射子弹
+				shot: function() {
+					this.flagShot++;
+					if(this.flagShot == 1) {
+						//播放子弹声音
+						//						musicArr[0].muted=false;
+						musicArr[0].play();
+						//创建子弹对象
+						if(this.bulletsType == 0) {
+							//单排 子弹大小6x14 
+							var b = new Bullet(this.x + this.width / 2 - 3, this.y - 14, 6, 14, 1, imgArr[1]);
+						} else {
+							//双排 子弹大小48x14
+							var b = new Bullet(this.x + this.width / 2 - 24, this.y - 14, 48, 14, 2, imgArr[2]);
+						}
+						//将其放进子弹数组暂时存储
+						this.bullets.push(b);
+						this.flagShot = 0;
+
+					}
+
+					//绘制子弹
+					for(var i = 0; i < this.bullets.length; i++) {
+						//判断子弹是否飞出屏幕
+						if(this.bullets[i].y < -this.bullets[i].height) {
+							//子弹已飞出屏幕，将飞出屏幕的子弹移出数组
+							this.bullets.splice(i, 1);
+							i--;
+						} else {
+							this.bullets[i].draw();
+							this.bullets[i].move();
+						}
+
+					}
+				}
+			};
+
+			/*
+			 *声明一个子弹类
+			 * 属性：
+			 * 1.位置
+			 * 2.大小
+			 * 3.伤害
+			 * 4.要绘制的图片对象
+			 * 方法：
+			 * 1.绘制子弹
+			 * 2.子弹移动
+			 */
+
+			function Bullet(x, y, width, height, hurt, img) {
+				this.x = x;
+				this.y = y;
+				this.width = width;
+				this.height = height;
+				this.hurt = hurt;
+				this.img = img;
+			}
+			//绘制子弹
+			Bullet.prototype.draw = function() {
+				pen.drawImage(this.img, this.x, this.y, this.width, this.height);
+			};
+			//移动子弹 
+			Bullet.prototype.move = function() {
+				this.y -= 10;
+			};
+
+			/*
+			 * 敌机类
+			 * 属性：
+			 * 1.位置
+			 * 2.大小
+			 * 3.血量
+			 * 4.绘制的图片对象
+			 * 5.速度
+			 * 6.记录是第几张图片
+			 * 7.分数
+			 * 8.记录当前敌机一共有几张图片
+			 * 9.控制换图的频率
+			 * 10.是否爆炸
+			 * 11.是否死亡
+			 * 
+			 * 方法：
+			 * 1.绘制敌机
+			 * 2.移动敌机
+			 */
+			function EnemyFly(x, y, width, height, hp, img, speed, score, maxI) {
+				//属性
+				//位置
+				this.x = x;
+				this.y = y;
+				//大小
+				this.width = width;
+				this.height = height;
+				//血量
+				this.hp = hp;
+				//要绘制的图片对象
+				this.img = img;
+				//速度
+				this.speed = speed;
+				//					分数
+				this.score = score;
+				//控制换图的最大张数
+				this.maxI = maxI;
+				//表示第几张图片
+				this.i = 0;
+				//控制换图的频率
+				this.flagI = 0;
+				//是否爆炸
+				this.isBoom = false;
+				//是否死亡
+				this.isDie = false;
+			}
+
+			//绘制敌机
+			EnemyFly.prototype.draw = function() {
+				//判断敌机状态，绘制不同的图像
+				if(this.isBoom == true) {
+					this.flagI++;
+					if(this.flagI == 5) {
+						this.i++;
+						if(this.i == this.maxI) {
+							//敌机已经死亡
+							this.isDie = true;
+						}
+						this.flagI = 0;
+					}
+
+				}
+				pen.drawImage(this.img, this.i * this.width, 0, this.width, this.height, this.x, this.y, this.width, this.height)
+			};
+			//移动敌机
+			EnemyFly.prototype.move = function() {
+				this.y += this.speed;
+			};
+			//声明一个产生随机数的函数[x,y]
+			function randomNumber(x, y) {
+				return Math.floor(Math.random() * (y - x + 1) + x);
+			}
+
+			//声明一个数组存储所有 的敌机
+			var enemies = [];
+			//声明一个随机产生敌机的方法
+			function randomEnemy() {
+				//随机一个【0,1000】的数
+				var randomNum = Math.floor(Math.random() * 1001);
+				//随机产生三种之一的敌机
+				if(randomNum < 900) {
+					//随机产生三种之一的敌机
+
+					if(randomNum < 100) {
+						//小飞机 190x34  x,y,width,height,hp,img,speed,score,maxI
+						//var e=new EnemyFly(Math.random()*canvasE.width-38,-34,38,34,2,imgArr[3],2,1,4);
+
+						//产生随机位置
+						var randomx = randomNumber(0, canvasE.width - 38);
+						var randomSpeed = randomNumber(1, 2);
+						var e = new EnemyFly(randomx, -34, 38, 34, 1, imgArr[3], randomSpeed, 100, 4);
+						//					console.log("小飞机");
+					} else if(randomNum < 180) {
+						//中型飞机276x64
+						//产生随机位置
+						var randomx = randomNumber(0, canvasE.width - 46);
+						var randomSpeed = randomNumber(1, 2);
+						var e = new EnemyFly(randomx, -64, 46, 64, 3, imgArr[4], randomSpeed, 300, 5);
+						//						console.log("中飞机");
+					} else {
+						//大飞机1100x164
+						//产生随机位置
+						var randomx = randomNumber(0, canvasE.width - 110);
+						var randomSpeed = randomNumber(1, 2);
+						var e = new EnemyFly(randomx, -164, 110, 164, 5, imgArr[5], randomSpeed, 500, 9);
+						//						console.log("大飞机");
+
+					}
+					//将产生的敌机放进敌机数组
+					enemies.push(e);
+				}
+
+				//绘制并移动敌机
+
+				for(var i = 0; i < enemies.length; i++) {
+					//当敌机飞出屏幕，将其移出数组
+					if(enemies[i] > canvasE.length || enemies[i].isDie == true) {
+						enemies.splice(i, 1);
+						i--;
+					} else {
+
+						enemies[i].draw();
+						enemies[i].move();
+
+					}
+				}
+
+			}
+
+			/*
+			 * 食物类
+			 * 1.位置
+			 * 2.大小
+			 * 3.要绘制的图片对象
+			 * 4.记录第几张图片
+			 * 5.速度
+			 * 6.是否被吃
+			 
+			 */
+			function Food(x, y, width, height, img, speed, i) {
+				//位置
+				this.x = x;
+				this.y = y;
+				//大小
+				this.width = width;
+				this.height = height;
+				//要绘制的图片对象
+				this.img = img;
+
+				//速度
+				this.speed = speed;
+				//记录第几张图片
+				this.i = i;
+				//是否被吃
+				this.eat = false;
+			}
+			//			绘制食物
+			Food.prototype.draw = function() {
+				pen.drawImage(this.img, this.i * this.width, 0, this.width, this.height, this.x, this.y, this.width, this.height)
+			};
+			//			移动食物
+			Food.prototype.move = function() {
+				this.y += this.speed;
+			};
+			//声明一个产生随机数的函数[x,y]
+			//			function randomNumber(x, y) {
+			//				return Math.floor(Math.random() * (y - x + 1) + x);
+			//			}
+			//			声明一个数组储存食物
+			var foods = [];
+			//声明一个随机产生食物的方法
+			function randomFood() {
+				//随机一个【0,1000】的数
+				var randomNum = Math.floor(Math.random() * 1001);
+				if(randomNum < 50) {
+					if(randomNum < 20) {
+
+						//76X68
+						var randomx = randomNumber(0, canvasE.width - 38);
+						var randomSpeed = randomNumber(2, 4);
+						var l = new Food(randomx, -68, 38, 68, imgArr[7], randomSpeed, 0);
+						//					console.log("炸弹");
+					} else {
+						var randomx = randomNumber(0, canvasE.width - 38);
+						var randomSpeed = randomNumber(2, 4);
+						var l = new Food(randomx, -68, 38, 68, imgArr[7], randomSpeed, 1);
+						//					console.log("双排子弹");
+					}
+					//将产生的食物放进食物数组
+					foods.push(l);
+				}
+				//绘制并移动食物
+				for(var i = 0; i < foods.length; i++) {
+					//当食物飞出屏幕，将其移出数组
+					if(foods[i] > canvasE.length || foods[i].eat == true) {
+						foods.splice(i, 1);
+						i--;
+					} else {
+
+						foods[i].draw();
+						foods[i].move();
+
+					}
+				}
+			}
+
+			//拖拽英雄移动
+			canvasE.onmousedown = function(e) {
+				var even = e || event;
+				var mX = even.offsetX;
+				var mY = even.offsetY;
+				//				console.log(mX,mY);
+				//判断鼠标是否在英雄所在的区域内按下
+				if(mX >= hero.x && mX <= hero.x + hero.width && mY >= hero.y && mY <= hero.y + hero.height) {
+					//				console.log("飞机上");
+					canvasE.onmousemove = function(e) {
+						var even = e || event;
+						var mX = even.offsetX;
+						var mY = even.offsetY;
+						hero.x = mX - hero.width / 2;
+						hero.y = mY - hero.height / 2;
+					}
+				}
+			}
+			//鼠标抬起事件
+			canvasE.onmouseup = function() {
+				canvasE.onmousemove = null;
+			}
+
+			//键盘控制英雄移动
+			window.onkeydown = function(e) {
+				var even = e || event;
+				switch(even.keyCode) {
+					//w87 a65 s83 d68
+					case 87:
+						{
+							hero.y -= 50;
+							break;
+						}
+					case 83:
+						{
+							hero.y += 50;
+							break;
+						}
+					case 65:
+						{
+							hero.x -= 50;
+							break;
+						}
+					case 68:
+						{
+							hero.x += 50;
+							break;
+						}
+
+				}
+			}
+
+			/*
+			 * 整个游戏规则下，碰撞有三种情况
+			 * 1.子弹和敌机
+			 * 2.英雄和敌机
+			 * 3.食物与英雄
+			 */
+
+			//碰撞检测 检测任意两个图像是否有重合的部分
+			function crash(obj1, obj2) {
+				//如果判断出两个元素重合，返回true，不重合返回false
+				var left1 = obj1.x;
+				var right1 = left1 + obj1.width;
+				var top1 = obj1.y;
+				var bottom1 = top1 + obj1.height;
+
+				var left2 = obj2.x;
+				var right2 = left2 + obj2.width;
+				var top2 = obj2.y;
+				var bottom2 = top2 + obj2.height;
+
+				if(left1 <= right2 && right1 >= left2 && top1 <= bottom2 && bottom1 >= top2) {
+					return true;
+				} else {
+					return false;
+				}
+			}
+			//子弹与敌机的碰撞检测
+			function bulletAndEnemy() {
+				//遍历子弹和敌机数组，进行位置的判断
+				for(var i = 0; i < enemies.length; i++) {
+					for(var j = 0; j < hero.bullets.length; j++) {
+						//只判断没有爆炸的敌机
+						if(enemies[i].isBoom == true) {
+							break;
+						}
+						//如果敌机与本颗子弹没有碰撞,继续判断与下一颗子弹是否碰撞						
+						if(crash(enemies[i], hero.bullets[j]) == false) {
+							continue;
+						}
+						/*
+						 * 子弹与敌机碰撞了
+						 * 1.敌机掉血
+						 * 2.是否爆炸（换图）
+						 * 3.得分
+						 * 4.子弹消失
+						 */
+						enemies[i].hp -= hero.bullets[j].hurt;
+						if(enemies[i].hp <= 0) {
+							enemies[i].isBoom = true;
+							//得分
+							gameScore += enemies[i].score;
+							score.innerHTML = "得分：" + gameScore;
+							//判断敌机类型（通过分值），播放对应的声音
+							switch(enemies[i].score) {
+								case 100:
+									{
+										//									musicArr[1].muted=false;
+										musicArr[1].play();
+										break;
+									}
+								case 300:
+									{
+										//									musicArr[2].muted=false;
+										musicArr[2].play();
+										break;
+									}
+								case 500:
+									{
+										//									musicArr[3].muted=false;
+										musicArr[3].play();
+										break;
+									}
+
+							}
+						}
+						//子弹消失
+						hero.bullets.splice(j, 1);
+						j--;
+					}
+				}
+			}
+			//var E=new EnemyFly(100,-164,110,164,3,imgArr[5],2,10,9);
+
+			//英雄与敌机的碰撞检测
+			function heroAndEnemy() {
+				for(var i = 0; i < enemies.length; i++) {
+					if(enemies[i].isBoom == true) {
+						continue;
+					}
+					//如果发生碰撞，两者都要爆炸
+					if(crash(hero, enemies[i]) == true) {
+						hero.isBoom = true;
+						enemies[i].isBoom = true;
+					}
+				}
+			}
+
+			//食物与英雄的碰撞检测
+			function foodAndHero() {
+				for(var i = 0; i < foods.length; i++) {
+					//食物被吃,食物消失
+					if(crash(foods[i], hero) == true) {
+						foods[i].eat = true;
+						if(foods[i].i == 1) {
+							hero.bulletsType = 1;
+							//计时
+							clearTimeout(int1);
+							var int1 = setTimeout(function() {  
+								hero.bulletsType = 0;
+							}, 5000);
+
+						} else {
+							for(var j = 0; j < enemies.length; j++) {
+								enemies[j].isBoom = true;
+								//得分
+								gameScore += enemies[j].score;
+								score.innerHTML = "得分" + gameScore;
+							}
+						}
+
+					}
+					//如果食物与英雄没有碰撞，继续判断与下一个食物是否碰撞
+					if(crash(foods[i], hero) == false) {
+						continue;
+					}
+				}
+			}
+			//开始游戏的函数
+			function startGame() {
+				pen.clearRect(0, 0, canvasE.width, canvasE.height);
+				bg.draw();
+				bg.move();
+				if(hero.isDie != true) {
+					hero.draw();
+					hero.shot();
+					heroAndEnemy();
+					bulletAndEnemy();
+					foodAndHero();
+				}
+
+				randomEnemy();
+				randomFood();
+
+				//				E.draw();
+				//				E.move();
+				requestAnimationFrame(startGame);
+
+			}
+			//给图片添加一个点击事件
+			m.onclick = function() {
+				musicArr[4].play();
+				if(this.getAttribute("src") == "img/静音.png") {
+					this.src = "img/音量.png";
+					for(var i = 0; i < musicArr.length; i++) {
+						musicArr[i].muted = false;
+					}
+
+				} else {
+					this.src = "img/静音.png";
+					for(var i = 0; i < musicArr.length; i++) {
+						musicArr[i].muted = true;
+					}
+
+				}
+
+			}
+			//重新开始
+			restart.onclick = function() {
+				location.reload();
+			}
+		</script>
+	</body>
+
+</html>
